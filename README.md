@@ -65,6 +65,7 @@ While the tracker is running, the following shortcuts can be used to control the
 - `--device_number`: The integer index of the telescope in your Alpaca server (usually `0`).
 - `--max_dra` / `--max_ddec`: Maximum allowed tracking rates in **degrees per second** (default: `2.5`). The script will refuse to track if the target exceeds these limits.
 - `--interval`: How often (in seconds) to fetch a new ephemeris point and update the telescope position (default: `10`).
+- `--slew_threshold`: The angular distance (in **arc-seconds**) at which the telescope should stop its slew and begin tracking (default: `30.0`).
 
 ## Usage: Utility Scripts
 

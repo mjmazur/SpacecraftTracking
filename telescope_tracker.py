@@ -1,4 +1,5 @@
 import time
+import math
 import msvcrt
 import argparse
 import sys
@@ -153,6 +154,7 @@ def main():
     parser.add_argument("--max_dra", type=float, default=2.5, help="Max RA track rate in deg/sec (default: 2.5)")
     parser.add_argument("--max_ddec", type=float, default=2.5, help="Max Dec track rate in deg/sec (default: 2.5)")
     parser.add_argument("--interval", type=int, default=10, help="Update interval in seconds (default: 10)")
+    parser.add_argument("--slew_threshold", type=float, default=30.0, help="Stop slew when within this many arc-seconds (default: 30.0)")
 
     args = parser.parse_args()
 
@@ -208,9 +210,29 @@ def main():
             print(f"Slewing to Target...")
             telescope.SlewToCoordinatesAsync(data['ra'], data['dec'])
             
-            # Wait for slew to complete (simplified)
+            # Wait for slew to complete with early exit threshold
             while telescope.Slewing:
-                time.sleep(1)
+                # Check current position
+                curr_ra = telescope.RightAscension
+                curr_dec = telescope.Declination
+                
+                # Convert to radians for spherical trigonometry
+                # Target: RA in hours (0-24) -> degrees (0-360) -> radians
+                # Current: RA in hours (0-24) -> degrees (0-360) -> radians
+                ra1, dec1 = math.radians(data['ra'] * 15), math.radians(data['dec'])
+                ra2, dec2 = math.radians(curr_ra * 15), math.radians(curr_dec)
+                
+                # Spherical Law of Cosines for distance
+                cos_sep = math.sin(dec1)*math.sin(dec2) + math.cos(dec1)*math.cos(dec2)*math.cos(ra1 - ra2)
+                cos_sep = min(1.0, max(-1.0, cos_sep)) # Clamp
+                sep_arcsec = math.degrees(math.acos(cos_sep)) * 3600
+                
+                if sep_arcsec <= args.slew_threshold:
+                    print(f"Slew within threshold ({sep_arcsec:.2f} <= {args.slew_threshold} arcsec). Aborting slew...")
+                    telescope.AbortSlew()
+                    break
+                
+                time.sleep(0.5)
             
             # Set custom tracking rates
             # ASCOM tracking rates are in arcseconds per SI second.
