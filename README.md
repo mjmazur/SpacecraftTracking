@@ -13,8 +13,8 @@ This project provides tools to:
 
 - **JPL Horizons Integration**: Real-time access to high-precision orbital data.
 - **Automated Tracking**: Slew to and track fast-moving objects (like the ISS) with an ASCOM telescope.
+- **Interactive Controls**: Real-time keyboard shortcuts to halt movement or park the telescope safely.
 - **Safety Measures**: Integrated checks to prevent slewing to objects below the horizon or exceeding hardware tracking limits.
-- **Daylight Filtering**: Option to filter out daylight observations for optical tracking.
 - **Environment Management**: Optimized for use with Conda environments (e.g., `sattrack`).
 
 ## Installation
@@ -22,6 +22,7 @@ This project provides tools to:
 ### Prerequisites
 
 - Python 3.9 or later.
+- Windows (required for the interactive keyboard shortcuts).
 - An [ASCOM Alpaca](https://ascom-standards.org/Alpaca/Index.htm) compliant telescope driver or simulator (e.g., [ASCOM Remote](https://ascom-standards.org/Downloads/Index.htm)).
 
 ### Setup
@@ -32,7 +33,7 @@ This project provides tools to:
    cd SpacecraftTracking
    ```
 
-2. **Create and activate a virtual environment** (recommended):
+2. **Create and activate the virtual environment**:
    ```powershell
    conda create -n sattrack python=3.10
    conda activate sattrack
@@ -42,51 +43,57 @@ This project provides tools to:
    ```powershell
    pip install -r requirements.txt
    ```
-   *Note: Ensure `alpyca` (the Python Alpaca interface) is installed.*
 
-## Usage
+## Usage: telescope_tracker.py
 
-### 1. Listing and Searching Objects
-Use `list_objects.py` to find the ID or name of the target you wish to track.
+The main script for real-time tracking. It fetches ephemeris data every few seconds and updates the telescope's position and custom tracking rates.
 
-- **List major bodies**:
+### Basic Command
+```powershell
+python telescope_tracker.py --target ISS --address localhost:5959
+```
+
+### Interactive Keyboard Shortcuts (Windows)
+While the tracker is running, the following shortcuts can be used to control the telescope instantly:
+- **CTRL + S** or **CTRL + H**: **Halt Movement**. Immediately aborts any active slew and disables tracking.
+- **CTRL + P**: **Park Telescope**. Slews the telescope to its parking location (**Azimuth 90°, Altitude 0°**) and then issues the Park command.
+
+### Arguments
+- `--target`: JPL Horizons target ID. Use `ISS` for the International Space Station, or numerically (e.g., `599` for Venus, `499` for Mars).
+- `--location`: JPL Horizons observer code (default: `440` for Elginfield).
+- `--address`: IP and Port of the Alpaca server (default: `localhost:5959`).
+- `--device_number`: The integer index of the telescope in your Alpaca server (usually `0`).
+- `--max_dra` / `--max_ddec`: Maximum allowed tracking rates in **degrees per second** (default: `2.5`). The script will refuse to track if the target exceeds these limits.
+- `--interval`: How often (in seconds) to fetch a new ephemeris point and update the telescope position (default: `10`).
+
+## Usage: Utility Scripts
+
+### 1. Listing and Searching Objects (`list_objects.py`)
+- **List major bodies** (Planets, Moon, etc.):
   ```powershell
   python list_objects.py --major
   ```
-- **Search for small bodies/spacecraft**:
+- **Search for spacecraft or small bodies**:
   ```powershell
   python list_objects.py --search "ISS"
   ```
 
-### 2. Fetching Ephemeris Data
-Use `horizons_client.py` to get a detailed observer table for a specific location.
-
-- **Example for Mars from a specific location**:
+### 2. Fetching Ephemeris Data (`horizons_client.py`)
+Fetches and displays a full ephemeris table for a given time range.
+- **Example**:
   ```powershell
-  python horizons_client.py --target 499 --location 440 --start "2026-03-01 00:00" --stop "2026-03-01 12:00"
+  python horizons_client.py --target 499 --start "2026-03-01 00:00" --stop "2026-03-01 12:00"
   ```
 
-### 3. Automated Telescope Tracking
-Use `telescope_tracker.py` to connect to your telescope and begin tracking a target in real-time.
+## Technical Details
 
-- **Track the ISS**:
-  ```powershell
-  python telescope_tracker.py --target ISS --address localhost:5959 --device_number 0
-  ```
-- **Arguments**:
-  - `--target`: JPL Horizons target ID (e.g., `ISS`, `499` for Mars).
-  - `--location`: JPL Horizons observer code (e.g., `440` for Elginfield).
-  - `--address`: IP:Port of the Alpaca server.
-  - `--max_dra / --max_ddec`: Maximum allowed tracking rates (deg/sec).
-  - `--interval`: Update frequency in seconds.
+### Tracking Logic
+The script uses the ASCOM `RightAscensionRate` and `DeclinationRate` properties to achieve smooth tracking of fast-moving objects. It assumes the mount is in **Equatorial mode**.
 
-## Project Structure
-
-- `telescope_tracker.py`: Main script for telescope control and real-time tracking.
-- `horizons_client.py`: Utility for fetching and parsing JPL Horizons ephemeris.
-- `list_objects.py`: Utility for discovering target IDs and names.
-- `requirements.txt`: Project dependencies.
+### Safety
+- **Horizon Check**: If the target's altitude drops below 0°, the script will stop tracking and exit.
+- **Connection Loss**: On any unexpected error or user interruption (CTRL+C), the script attempts to disable tracking and disconnect cleanly.
 
 ## License
 
-This project is intended for educational and enthusiast astronomical use. Please ensure compliance with local flight safety and laser/telescope regulations.
+This project is intended for educational and astronomical use. Please ensure compliance with local flight safety and laser/telescope regulations.

@@ -1,4 +1,5 @@
 import time
+import msvcrt
 import argparse
 import sys
 from datetime import datetime, timedelta
@@ -114,6 +115,35 @@ def parse_current_data(text):
         print(f"Line content: {data_line}")
         return None
 
+def handle_keyboard_input(telescope):
+    """
+    Checks for non-blocking keyboard input on Windows.
+    Returns True if an exit command (like Park) was issued.
+    """
+    if msvcrt.kbhit():
+        key = msvcrt.getch()
+        if key in [b'\x08', b'\x13']:  # CTRL+H, CTRL+S
+            print("\n[User Command] Halting movement...")
+            try:
+                telescope.AbortSlew()
+                telescope.Tracking = False
+                print("Movement halted and tracking disabled.")
+            except Exception as e:
+                print(f"Error halting: {e}")
+        elif key == b'\x10':  # CTRL+P
+            print("\n[User Command] Parking telescope at Az=90, Alt=0...")
+            try:
+                # Slew to position 2 (Az=90, Alt=0) then Park
+                telescope.SlewToAltAzAsync(90.0, 0.0)
+                while telescope.Slewing:
+                    time.sleep(0.5)
+                telescope.Park()
+                print("Telescope parked.")
+                return True
+            except Exception as e:
+                print(f"Error parking: {e}")
+    return False
+
 def main():
     parser = argparse.ArgumentParser(description="Track objects using ASCOM telescope and JPL Horizons.")
     parser.add_argument("--target", default="499", help="Target body (default: 499)")
@@ -188,7 +218,13 @@ def main():
             telescope.RightAscensionRate = data['dra_arcsec_sec']
             telescope.DeclinationRate = data['ddec_arcsec_sec']
 
-            time.sleep(args.interval)
+            # Polling wait instead of time.sleep
+            print(f"Tracking... (Press CTRL+S to Halt, CTRL+P to Park)")
+            start_wait = time.time()
+            while time.time() - start_wait < args.interval:
+                if handle_keyboard_input(telescope):
+                    return # Exit main
+                time.sleep(0.1)
 
     except KeyboardInterrupt:
         print("\nTracking stopped by user.")
