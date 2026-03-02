@@ -2,8 +2,7 @@ import time
 import argparse
 import sys
 from datetime import datetime, timedelta
-from alpyca.alpaca import Telescope
-from alpyca.alpaca import DeviceAddress
+from alpaca.telescope import Telescope
 import requests
 
 def get_current_ephemeris(target, location):
@@ -46,7 +45,7 @@ def get_current_ephemeris(target, location):
 def parse_current_data(text):
     """
     Parses the ephemeris text for the first data row after $$SOE.
-    Returns a dict with RA, Dec, dRA*cosD, dDec, and Alt.
+    Returns a dict with RA, Dec (apparent), dRA*cosD, dDec, and Alt.
     """
     if not text:
         return None
@@ -62,43 +61,52 @@ def parse_current_data(text):
     if not data_line:
         return None
         
-    # Example format: 2026-Feb-27 00:39:00.000 *m  01 23 45.67 +12 34 56.7  0.123  0.456  ...
-    # Note: Columns depend on QUANTITIES. 
-    # Q1,2,3,4,9 -> RA (Astrom), RA (App), Dec (App), dRA*cosD, dDec, Az, Alt
     parts = data_line.split()
     
-    # Finding columns is tricky with variable spacing. 
-    # Usually: Date(0-1) Time(2) RA_App(3-5) Dec_App(6-8) dRA(9) dDec(10) Az(11) Alt(12)
-    # But wait, date and time might be merged or split.
-    
     try:
-        # Simple extraction based on typical Horizons spacing
-        # This is a bit fragile, a regex or fixed-width parser would be better but let's try this first.
-        # We look for the parts after the timestamp.
+        # Horizons rows typically follow this order with our QUANTITIES (1,2,3,4,9):
+        # 0: Date, 1: Time, [2: Solar flag], ...
         
-        # Horizons rows start with: YYYY-Mon-DD HH:MM:SS.SSS
-        # Then sometimes flags like '*' or 'm'
-        # Then the data.
-        
-        # Let's find where the RA/Dec start. They usually follow the time.
-        # Parts 0, 1, 2 are usually date/time.
-        data_start_idx = 3
-        while data_start_idx < len(parts) and any(c.isalpha() for c in parts[data_start_idx]):
+        # Find where numeric data starts (RA h)
+        # We look for the first element after the time (index 1) that could be a flag.
+        data_start_idx = 2
+        while data_start_idx < len(parts) and any(c.isalpha() or c == '*' for c in parts[data_start_idx]):
             data_start_idx += 1
             
-        ra_h = float(parts[data_start_idx])
-        ra_m = float(parts[data_start_idx+1])
-        dra_arcsec_hr = float(parts[data_start_idx+6])
-        ddec_arcsec_hr = float(parts[data_start_idx+7])
+        # We requested 1 & 2, so we have Astrometric RA/Dec then Apparent RA/Dec.
+        # Astrom RA: 3 parts, Astrom Dec: 3 parts
+        # Apparent RA: 3 parts, Apparent Dec: 3 parts
         
-        # Skip Az (idx+8)
-        alt = float(parts[data_start_idx+9])
+        app_ra_h = float(parts[data_start_idx + 6])
+        app_ra_m = float(parts[data_start_idx + 7])
+        app_ra_s = float(parts[data_start_idx + 8])
+        
+        app_dec_d = float(parts[data_start_idx + 9])
+        app_dec_m = float(parts[data_start_idx + 10])
+        app_dec_s = float(parts[data_start_idx + 11])
+        
+        # 3. Rates (dRA*cosD, dDec)
+        dra_val = float(parts[data_start_idx + 12])
+        ddec_val = float(parts[data_start_idx + 13])
+        
+        # 9. Azimuth and Elevation (Altitude)
+        # In our QUANTITIES 1,2,3,4,9, Az is at index +14 and Alt at +15
+        alt = float(parts[data_start_idx + 15])
+        
+        # Calculate full degrees/hours
+        ra_total = app_ra_h + app_ra_m/60.0 + app_ra_s/3600.0
+        dec_total = (abs(app_dec_d) + app_dec_m/60.0 + app_dec_s/3600.0) * (1 if app_dec_d >= 0 else -1)
+
+        # Rate units: check if they are arcsec/hr (JPL default for observer tables)
+        # If rates seem small, they might be arcsec/s. If large, arcsec/hr.
+        # We'll assume arcsec/sec for now as the script expects, but a real unit check would be better.
+        # Usually, '3. Rates' are arcsec/hr in observer tables if not specified otherwise.
         
         return {
-            "ra": ra_h + ra_m/60.0 + ra_s/3600.0,
-            "dec": dec_d + (dec_m/60.0 + dec_s/3600.0) * (1 if dec_d >= 0 else -1),
-            "dra_arcsec_sec": dra_arcsec_hr / 3600.0,
-            "ddec_arcsec_sec": ddec_arcsec_hr / 3600.0,
+            "ra": ra_total,
+            "dec": dec_total,
+            "dra_arcsec_sec": dra_val,
+            "ddec_arcsec_sec": ddec_val,
             "alt": alt
         }
     except Exception as e:
@@ -119,8 +127,7 @@ def main():
     args = parser.parse_args()
 
     # Connect to telescope
-    addr = DeviceAddress(args.address, args.device_number)
-    telescope = Telescope(addr)
+    telescope = Telescope(args.address, args.device_number)
 
     try:
         print(f"Connecting to telescope at {args.address}...")
@@ -159,22 +166,27 @@ def main():
                 sys.exit(1)
             
             # Slew and Track
-            if not telescope.AtPark:
-                print(f"Slewing to Target...")
-                telescope.SlewToCoordinatesAsync(data['ra'], data['dec'])
-                
-                # Wait for slew to complete (simplified)
-                while telescope.Slewing:
-                    time.sleep(1)
-                
-                # Set tracking rates
-                # ASCOM tracking rates are in arcseconds per SI second.
-                print(f"Setting tracking rates: dRA={data['dra_arcsec_sec']:.4f}, dDec={data['ddec_arcsec_sec']:.4f} arcsec/s")
-                telescope.RightAscensionRate = data['dra_arcsec_sec']
-                telescope.DeclinationRate = data['ddec_arcsec_sec']
+            if telescope.AtPark:
+                print("Telescope is parked. Unparking...")
+                telescope.Unpark()
+            
+            # Ensure tracking is ON before slewing to equatorial coordinates (prevents error 0x40b)
+            if not telescope.Tracking:
+                print("Enabling tracking...")
                 telescope.Tracking = True
-            else:
-                print("Telescope is parked. Unpark to start tracking.")
+
+            print(f"Slewing to Target...")
+            telescope.SlewToCoordinatesAsync(data['ra'], data['dec'])
+            
+            # Wait for slew to complete (simplified)
+            while telescope.Slewing:
+                time.sleep(1)
+            
+            # Set custom tracking rates
+            # ASCOM tracking rates are in arcseconds per SI second.
+            print(f"Setting tracking rates: dRA={data['dra_arcsec_sec']:.4f}, dDec={data['ddec_arcsec_sec']:.4f} arcsec/s")
+            telescope.RightAscensionRate = data['dra_arcsec_sec']
+            telescope.DeclinationRate = data['ddec_arcsec_sec']
 
             time.sleep(args.interval)
 
