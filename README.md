@@ -147,4 +147,4 @@ The script uses the ASCOM `RightAscensionRate` and `DeclinationRate` properties 
 
 ## License
 
-This project is intended for educational and astronomical use. Please ensure compliance with local flight safety and laser/telescope regulations.
+This project is intended for educational and astronomical use.
