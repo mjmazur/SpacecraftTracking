@@ -212,7 +212,15 @@ def main():
             
             # Wait for slew to complete with early exit threshold
             while telescope.Slewing:
-                # Check current position
+                # Check for keyboard input during slew (CTRL+S/H to Halt, CTRL+P to Park)
+                if handle_keyboard_input(telescope):
+                    return # Exit main if parking was triggered
+                
+                # Check for halt/abort manually triggered by handle_keyboard_input
+                if not telescope.Slewing:
+                    break
+                    
+                # Check current position for early threshold completion
                 curr_ra = telescope.RightAscension
                 curr_dec = telescope.Declination
                 

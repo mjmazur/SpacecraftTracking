@@ -86,6 +86,19 @@ Fetches and displays a full ephemeris table for a given time range.
   python horizons_client.py --target 499 --start "2026-03-01 00:00" --stop "2026-03-01 12:00"
   ```
 
+## Advanced Algorithms & Physics Modules
+
+### 1. `horizons_tle.py` (Vector-Based Ephemeris Extraction)
+This tool calculates TLE parameters algebraically directly from state variables instead of relying on default JPL element tables (which frequently omit drag/motion parameters for missions).
+- **Cartesian Mechanics**: It queries the Horizons `VECTORS` payload (ICRF frame) to harvest $X$, $Y$, $Z$ and $V_X$, $V_Y$, $V_Z$.
+- **SGP4 Inversion**: These variables are run backwards through `sgp4.ext.rv2coe` to formulate instantaneous Classical Orbital Elements (COE), effectively bypassing conventional TLE gaps while maintaining precise `astropy.time` epoch synchronization.
+
+### 2. `query_horizons.py` (Advanced Ephemeris Profiler)
+This script models absolute physical conditions and geometric transits for telescope predictions:
+- **Apparent Magnitude Extinction**: Artemis II (and analog tracking objects) brightness is modeled utilizing a mathematical Diffuse Sphere projection standardizing a $20 m^2$ frame. It additionally integrates the **1989 Kasten Young Geometric Airmass Model** ($k=0.2$ visual baseline) to reliably attenuate visible brightness down toward the atmospheric horizon.
+- **Lunar Limb Angular Separation**: Transits are predicted via a dual-API payload. The script grabs Topocentric Apparent RA/DEC coordinates for both the target spacecraft and the Moon concurrently. It merges them inside an `astropy.coordinates.SkyCoord` engine to calculate the absolute degree of spherical separation natively subtracting the dynamic lunar radius sequence!
+- **Mechanical Rate of Motion**: The tracker intercepts raw Horizons Output Apparent Rate arrays (`dRA*cosD` and `dDEC/dt`), parses their strings out of standard `arcsec/hour` variables, and mathematically scales the true tracking rate limits sequentially into `arcsec/s` suitable for precision Alpaca Slew constraints.
+
 ## Technical Details
 
 ### Tracking Logic

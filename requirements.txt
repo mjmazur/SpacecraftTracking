@@ -1,2 +1,4 @@
 requests
 alpyca
+skyfield
+matplotlib
