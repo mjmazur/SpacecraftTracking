@@ -86,6 +86,21 @@ Fetches and displays a full ephemeris table for a given time range.
   python horizons_client.py --target 499 --start "2026-03-01 00:00" --stop "2026-03-01 12:00"
   ```
 
+### 3. Simulating GEO Belt Tracking (`geo_pointing_sim.py`)
+Simulates an optimal sidereal-tracking pointing strategy for a multi-camera array imaging the geostationary satellite belt.
+- **Examples**:
+  ```powershell
+  python geo_pointing_sim.py                    # Run quick summary for all 4 dates
+  python geo_pointing_sim.py --plot             # Save png plot figures
+  python geo_pointing_sim.py --n-cameras 6      # Configure 6 cameras on the mount
+  python geo_pointing_sim.py --refresh          # Re-download GEO TLEs prior to analysis
+  ```
+- **Arguments**:
+  - `-n`, `--n-cameras`: Number of cameras on the mount (default: 4).
+  - `-f`, `--fov`: Per-camera FOV in degrees (default: 5.0).
+  - `-d`, `--dwell`: Sidereal tracking dwell time in minutes (default: 10.0).
+  - `--dates`: Dates to simulate (default: all).
+
 ## Advanced Algorithms & Physics Modules
 
 ### 1. `horizons_tle.py` (Vector-Based Ephemeris Extraction)
@@ -93,11 +108,33 @@ This tool calculates TLE parameters algebraically directly from state variables 
 - **Cartesian Mechanics**: It queries the Horizons `VECTORS` payload (ICRF frame) to harvest $X$, $Y$, $Z$ and $V_X$, $V_Y$, $V_Z$.
 - **SGP4 Inversion**: These variables are run backwards through `sgp4.ext.rv2coe` to formulate instantaneous Classical Orbital Elements (COE), effectively bypassing conventional TLE gaps while maintaining precise `astropy.time` epoch synchronization.
 
+#### Usage
+- **Example**:
+  ```powershell
+  python horizons_tle.py --target "-1024" --epoch "2026-04-01 00:00:00" --output my_target.tle
+  ```
+- **Arguments**:
+  - `--target`: Target object ID (default: -1024).
+  - `--epoch`: Epoch date for elements (YYYY-MM-DD HH:MM:SS) (default: current utcnow).
+  - `--output`: Output TLE filename.
+
 ### 2. `query_horizons.py` (Advanced Ephemeris Profiler)
 This script models absolute physical conditions and geometric transits for telescope predictions:
 - **Apparent Magnitude Extinction**: Artemis II (and analog tracking objects) brightness is modeled utilizing a mathematical Diffuse Sphere projection standardizing a $20 m^2$ frame. It additionally integrates the **1989 Kasten Young Geometric Airmass Model** ($k=0.2$ visual baseline) to reliably attenuate visible brightness down toward the atmospheric horizon.
 - **Lunar Limb Angular Separation**: Transits are predicted via a dual-API payload. The script grabs Topocentric Apparent RA/DEC coordinates for both the target spacecraft and the Moon concurrently. It merges them inside an `astropy.coordinates.SkyCoord` engine to calculate the absolute degree of spherical separation natively subtracting the dynamic lunar radius sequence!
 - **Mechanical Rate of Motion**: The tracker intercepts raw Horizons Output Apparent Rate arrays (`dRA*cosD` and `dDEC/dt`), parses their strings out of standard `arcsec/hour` variables, and mathematically scales the true tracking rate limits sequentially into `arcsec/s` suitable for precision Alpaca Slew constraints.
+
+#### Usage
+- **Example**:
+  ```powershell
+  python query_horizons.py --obj "-1024" --start "20260401_000000" --stop "20260402_000000" --step 30
+  ```
+- **Arguments**:
+  - `--obj`: Object ID (default: -1024).
+  - `--loc` / `--latlon`: Location name or coordinates.
+  - `--start` / `--stop`: Time interval bounds (`YYYYMMDD_HHmmss`).
+  - `--step`: Time step interval in minutes.
+  - `--tle`: Provide a TLE file for calculation bypassing JPL Horizons.
 
 ## Technical Details
 
